@@ -1,0 +1,523 @@
+%%%%%%%% ICML 2026 EXAMPLE LATEX SUBMISSION FILE %%%%%%%%%%%%%%%%%
+
+\documentclass{article}
+
+% Recommended, but optional, packages for figures and better typesetting:
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{subcaption}
+\usepackage{booktabs} % for professional tables
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{float}
+\usepackage[sort, numbers, square]{natbib}
+
+
+
+% hyperref makes hyperlinks in the resulting PDF.
+% If your build breaks (sometimes temporarily if a hyperlink spans a page)
+% please comment out the following usepackage line and replace
+% \usepackage{icml2026} with \usepackage[nohyperref]{icml2026} above.
+
+% Use the following line for the initial blind version submitted for review:
+\usepackage{icml2026}
+
+% For preprint, use
+% \usepackage[preprint]{icml2026}
+
+% If accepted, instead use the following line for the camera-ready submission:
+% \usepackage[accepted]{icml2026}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{mathtools}
+\usepackage{amsthm}
+\usepackage{enumitem}
+
+% if you use cleveref..
+\usepackage[capitalize,noabbrev]{cleveref}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% THEOREMS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+% Todonotes is useful during development; simply uncomment the next line
+%    and comment out the line below the next line to turn off comments
+%\usepackage[disable,textsize=tiny]{todonotes}
+\usepackage[textsize=tiny]{todonotes}
+
+% The \icmltitle you define below is probably too long as a header.
+% Therefore, a short form for the running title is supplied here:
+\icmltitlerunning{Permutation-Regularized Expander Graph Propagation}
+
+\begin{document}
+
+\twocolumn[
+  \icmltitle{Permutation-Regularized Expander Graph Propagation}
+
+  % It is OKAY to include author information, even for blind submissions: the
+  % style file will automatically remove it for you unless you've provided
+  % the [accepted] option to the icml2026 package.
+
+  % List of affiliations: The first argument should be a (short) identifier you
+  % will use later to specify author affiliations Academic affiliations
+  % should list Department, University, City, Region, Country Industry
+  % affiliations should list Company, City, Region, Country
+
+  % You can specify symbols, otherwise they are numbered in order. Ideally, you
+  % should not use this facility. Affiliations will be numbered in order of
+  % appearance and this is the preferred way.
+  \icmlsetsymbol{equal}{*}
+
+  \begin{icmlauthorlist}
+    \icmlauthor{Firstname1 Lastname1}{equal,yyy}
+    \icmlauthor{Firstname2 Lastname2}{equal,yyy,comp}
+    \icmlauthor{Firstname3 Lastname3}{comp}
+    \icmlauthor{Firstname4 Lastname4}{sch}
+    \icmlauthor{Firstname5 Lastname5}{yyy}
+    \icmlauthor{Firstname6 Lastname6}{sch,yyy,comp}
+    \icmlauthor{Firstname7 Lastname7}{comp}
+    %\icmlauthor{}{sch}
+    %\icmlauthor{}{sch}
+  \end{icmlauthorlist}
+
+  \icmlaffiliation{yyy}{Department of XXX, University of YYY, Location, Country}
+  \icmlaffiliation{comp}{Company Name, Location, Country}
+  \icmlaffiliation{sch}{School of ZZZ, Institute of WWW, Location, Country}
+
+  \icmlcorrespondingauthor{Firstname1 Lastname1}{first1.last1@xxx.edu}
+  \icmlcorrespondingauthor{Firstname2 Lastname2}{first2.last2@www.uk}
+
+  % You may provide any keywords that you find helpful for describing your
+  % paper; these are used to populate the "keywords" metadata in the PDF but
+  % will not be shown in the document
+  \icmlkeywords{Machine Learning, ICML}
+
+  \vskip 0.3in
+]
+
+% this must go after the closing bracket ] following \twocolumn[ ...
+
+% This command actually creates the footnote in the first column listing the
+% affiliations and the copyright notice. The command takes one argument, which
+% is text to display at the start of the footnote. The \icmlEqualContribution
+% command is standard text for equal contribution. Remove it (just {}) if you
+% do not need this facility.
+
+% Use ONE of the following lines. DO NOT remove the command.
+% If you have no special notice, KEEP empty braces:
+\printAffiliationsAndNotice{}  % no special notice (required even if empty)
+% Or, if applicable, use the standard equal contribution text:
+% \printAffiliationsAndNotice{\icmlEqualContribution}
+
+\begin{abstract}
+  Expander-based message passing has been proposed as an effective mechanism to mitigate over-squashing in graph neural networks (GNNs) by enabling rapid global information flow. However, fixed expander structures can overfit and generalize poorly on realistic long-range graph benchmarks. We propose Permuted Expander Graph Propagation (P-EGP), a simple modification that introduces controlled permutations of the expander connectivity as a form of structural regularization. Empirically, permutation improves performance at shallow depths, yielding large gains on TreeNeighborMatch and consistent 4–10\% absolute improvements over EGP and CGP on Peptides-func and Peptides-struct, with results stable across multiple seeds. At larger depths, we uncover a trade-off between rapid mixing and layer-to-layer coherence, and show that applying permutation selectively—rather than uniformly across layers— recovers and further improves generalization. Overall, P-EGP consistently improves generalization with negligible additional cost (up to constant factors).
+\end{abstract}
+
+\section{Introduction}
+
+Oversquashing\cite{oversquashing} in Graph Neural Networks (GNNs) refers to the phenomenon where information from an exponentially expanding k-hop neighborhood must be compressed into fixed-size node representations as messages propagate across layers, causing long-range dependencies to be distorted or lost. This makes long-range reasoning hard because, as the graph distance increases, signals from faraway nodes become indistinguishable and overwhelmed, even if they are theoretically reachable. Simply stacking more layers in vanilla GNNs does not solve this problem: deeper architectures exacerbate oversquashing by funneling more information into the same constrained node representations, while also introducing related issues like oversmoothing, where node embeddings become increasingly similar. As a result, naïvely increasing depth often degrades performance rather than enabling effective global reasoning, highlighting a structural limitation of standard message-passing GNNs rather than a lack of expressive power per layer.
+
+Expanders\cite{expander} are attractive for mitigating oversquashing because they achieve a rare but crucial combination: they are sparse,
+ yet they exhibit strong global connectivity. This means information can propagate between any two nodes in very few hops without creating bottlenecks. Expander Graph Propagation (EGP)\cite{egp} is a successful instantiation of this idea, introducing fixed auxiliary graphs with expander properties that are interleaved with standard message passing, allowing GNNs to efficiently mix global information while remaining scalable and preprocessing-free. Cayley Graph Propagation (CGP)\cite{cgp} refines this approach by more faithfully preserving the expander structure: instead of truncating the auxiliary Cayley graph to match the input graph size, CGP propagates over the complete Cayley graph, using additional virtual nodes to retain its theoretical expansion guarantees. This refinement strengthens the bottleneck-free communication promised by expanders, leading to more robust long-range information flow in GNNs.
+
+Despite these advances, we empirically observe that models with fixed expanders achieve high training performance but exhibit weaker generalization and robustness. As a possible explanation, we hypothesize that the fixed expanders introduce a stable shortcut, which may lead to over-specialized representations.
+
+Contributions:
+\begin{enumerate}
+  \item We introduce permutation-regularized variants of expander graph propagation with negligible overhead.
+
+  \item We achieve large and consistent improvements over EGP and CGP on LRGB and synthetic oversquashing benchmarks.
+
+  \item We empirically demonstrate that permutation regularization yields representations more robust to expander removal on real long-range graph datasets.
+
+\end{enumerate}
+\section{Related Work}
+\subsection{Oversquashing}
+
+Oversquashing refers to the failure of graph neural networks (GNNs) to transmit long-range information because signals from an exponentially growing receptive field are compressed into fixed-size node representations; Alon \& Yahav formalized this bottleneck and showed it is distinct from over-smoothing, especially in tasks with large problem radii. To diagnose this failure mode, they introduced oversquashing stress tests—controlled synthetic benchmarks (e.g., tree-structured message-passing tasks) that are theoretically solvable but empirically break standard GNNs as depth increases—demonstrating that architectural bottlenecks, rather than optimization issues, fundamentally limit long-range reasoning in GNNs.
+
+\subsection{Expander-based propagation}
+
+\subsubsection{EGP}
+Expander Graph Propagation (EGP) was proposed as a structural response to over-squashing in message passing GNNs, aiming to enable rapid global information flow without incurring the cost of dense connectivity. The central idea is to interleave standard GNN layers with propagation over a fixed auxiliary expander graph, allowing information to mix globally in a small number of steps.
+
+The design of EGP is guided by several constraints: global propagation in logarithmic depth, resistance to information bottlenecks, linear time and space complexity on sparse graphs, and the absence of input-dependent preprocessing. By relying on precomputed sparse expanders that are independent of the input graph, EGP satisfies these constraints while remaining scalable and simple to integrate into existing GNN architectures.
+\subsubsection{CGP}
+Cayley Graph Propagation (CGP) builds on the expander-based message passing framework introduced by EGP by revisiting how Cayley graphs are aligned with the input graph. While EGP constructs a truncated subgraph of a Cayley graph to match the input graph size, CGP observes that this truncation can weaken the desirable expansion properties of the underlying expander. To address this, CGP proposes propagating over the complete Cayley graph structure, introducing additional virtual nodes\cite{cgp,virtual_nodes} where necessary to preserve the graph’s theoretical guarantees.
+
+CGP retains the alternating layer schema of EGP — interleaving input-graph and auxiliary-graph propagation, ensuring that message passing occurs on a bottleneck-free expander at each auxiliary layer. This formulation preserves the design goals of EGP, including sparsity, scalability, and preprocessing-free operation, while offering a theoretically grounded alternative for expander-based propagation.
+\subsubsection{Other graph editing methods}
+The approaches discussed above focus on auxiliary expander graphs that are used exclusively during message passing, without modifying the topology of the input graph itself. Accordingly, this work focuses exclusively on expander-based message passing and directly builds on Expander Graph Propagation (EGP) and Cayley Graph Propagation (CGP).
+
+Accordingly, we restrict our comparisons to expander-based methods and do not consider general graph rewiring approaches, which are orthogonal to the setting studied here.
+\section{Method}
+
+\subsection{Expander Graph Propagation}
+\paragraph{Notation (following EGP).}
+Let the input graph be defined by node features
+$X \in \mathbb{R}^{|V|\times d}$ and an adjacency matrix
+$A \in \mathbb{R}^{|V|\times |V|}$, where $x_u \in \mathbb{R}^d$
+denotes the feature vector of node $u \in V$.
+Let $A_{\mathrm{Cay}(n)} \in \mathbb{R}^{|V|\times |V|}$ denote the
+adjacency matrix induced by a (possibly truncated) Cayley graph
+constructed with size parameter $n$.
+We write a generic graph neural network layer as
+$\mathrm{GNN}(\cdot,\cdot)$, mapping node features and an adjacency
+matrix to updated node features.
+
+Expander Graph Propagation alternates layers operating on the input
+graph and the expander graph. For example, a two-layer block is written
+as
+\[
+H = \mathrm{GNN}\big(\mathrm{GNN}(X, A),\, A_{\mathrm{Cay}(n)}\big),
+\]
+and this alternating pattern is repeated for a fixed number of layers,
+with the final node representations used for downstream prediction.
+
+Since our goal is to isolate the effect of the proposed mechanism, we restrict our experiments to the Graph Isomorphism Network (GIN)\cite{gin}. Unless stated otherwise, the term \textsc{GNN} will henceforth refer to a GIN layer.
+So, for a node $u$, the update rule is given by
+\begin{equation}
+h_u = \phi\!\left((1+\epsilon)x_u + \sum_{v \in \mathcal{N}(u)} x_v \right),
+\end{equation}
+where $\mathcal{N}(u)$ denotes the neighborhood of node $u$, $\epsilon \in \mathbb{R}$ is a learnable parameter, and $\phi : \mathbb{R}^d \rightarrow \mathbb{R}^{d'}$ is implemented as a multilayer perceptron with two hidden layers.
+
+Additionally, our method adopts the same expander graph family introduced in Expander Graph Propagation.
+
+
+\subsection{Permutation-Regularized Expander Propagation}
+In our model, we retain the alternating two-layer structure of Expander Graph Propagation, but randomise the expander connectivity at each layer via node permutations. A two-layer block is given by,
+\[
+H = \mathrm{GNN}\!\left(
+    \mathrm{GNN}(X, A),\,
+    P^\top A_{\mathrm{Cay}(n)} P
+\right),
+\]
+where $P$ is a random permutation matrix applied at every other layer.
+This operation preserves the expander graph up to isomorphism, while reassigning node-to-node correspondences across layers, thereby preventing a fixed alignment between expander vertices and input graph nodes.
+
+We summarise the resulting forward pass in Algorithm~\ref{alg:prep}.
+\begin{algorithm}[H]
+\caption{Permutation-Regularized Expander Propagation}
+\label{alg:prep}
+\begin{algorithmic}
+\STATE \textbf{Input:} Node features $X \in \mathbb{R}^{|V|\times d}$, adjacency matrix $A \in \mathbb{R}^{|V|\times |V|}$
+\STATE \textbf{Output:} Node embeddings $H$
+\STATE Choose the smallest expander graph $G^{\mathrm{Cay}(n)}$ with $|V(G^{\mathrm{Cay}(n)})| \ge |V|$
+\STATE Let $A^{\mathrm{Cay}(n)}$ denote its adjacency matrix
+\STATE $H^{(0)} \leftarrow X$
+\FOR{$t = 1$ \ldots $T$}
+    \IF{$t$ is odd}
+        \STATE $H^{(t)} \leftarrow \mathrm{GNN}^{(t)}(H^{(t-1)}, A)$
+        \COMMENT{Propagation over input graph}
+    \ELSE
+        \STATE $P \leftarrow \textsc{GeneratePermutation}()$
+
+        \STATE $H^{(t)} \leftarrow \mathrm{GNN}^{(t)}\!\left(
+        H^{(t-1)},\,
+        P^\top A^{\mathrm{Cay}(n)}_{1:|V|,1:|V|} P
+        \right)$
+        \COMMENT{Permuted expander propagation}
+    \ENDIF
+\ENDFOR
+\STATE \textbf{return} $H^{(T)}$
+\end{algorithmic}
+\end{algorithm}
+\paragraph{Implementation details.}
+In practice, permutation is applied to the expander graph’s edge list\cite{pyg} rather than explicitly forming the permuted
+adjacency matrix $P^\top A P$. Since the Cayley graph is 4-regular, this operation can be performed in
+$O(|E|)=O(|V|)$ time by relabelling node indices in the adjacency list, preserving the overall linear-time
+complexity of the method.
+
+For a fixed epoch and mini-batch, given an initial seed $s_0$, we iteratively apply
+\[
+(P^{(t+1)}, s_{t+1}) = \textsc{GeneratePermutation}(s_t),
+\]
+where $s_t$ denotes the seed at the expander layer $t$.
+
+
+\subsubsection{Variants}
+The frequency at which \textsc{GeneratePermutation} is invoked defines different variants of our method.
+Specifically, we consider:
+\begin{itemize}
+    \item \textbf{P-EGP (per-epoch, batch, layer):} a fresh permutation is generated for every combination of epoch, mini-batch, and expander layer;
+    \item \textbf{EP-EGP (per-epoch, layer):} a fresh permutation is generated for each epoch and expander layer, and shared across all mini-batches within the epoch;
+    \item \textbf{F-EGP (fixed per-layer):} a fixed permutation is generated once per expander layer and reused throughout training.
+\end{itemize}
+
+While \textbf{P-EGP} introduces the highest degree of stochasticity and maximally disrupts fixed routing patterns across layers and epochs, this may come at the cost of reduced stability in long-range information propagation. The \textbf{EP-EGP} and \textbf{F-EGP} variants therefore represent intermediate trade-offs between stochasticity and the ability to learn consistent global structures.
+
+
+
+
+\section{Experimental Setup}
+
+\subsection{Datasets}
+\subsubsection{Peptides}
+Peptides-func and Peptides-struct are part of the Long Range Graph Benchmark (LRGB)\cite{LRGB}, which was explicitly designed to evaluate graph models under long-range dependency constraints. In contrast to common molecular benchmarks with small graph diameters, peptide graphs are substantially larger and sparser, with an average shortest path length of approximately 20.9 and an average diameter of about 57, while maintaining a low average degree close to 2. These structural properties make information propagation across distant nodes inherently challenging for local message-passing GNNs and render the datasets particularly sensitive to oversquashing effects. As discussed in the LRGB benchmark, strong performance on these tasks typically requires models to effectively capture and integrate long-range dependencies beyond local neighborhoods.
+
+Notably, Peptides-func (multi-label graph classification) and Peptides-struct (graph regression) share the same underlying molecular graphs and differ only in their prediction tasks, enabling evaluation of whether a method generalizes across distinct learning regimes under identical graph structures. Peptides-func is evaluated using \textbf{Average Precision (AP)} across 10 binary labels, while Peptides-struct is evaluated using \textbf{Mean Absolute Error (MAE)} for predicting aggregated 3D structural properties.
+\subsubsection{TreeNeighborMatch}
+TreeNeighborMatch is a synthetic benchmark introduced by Alon and Yahav\cite{oversquashing} to explicitly probe the effects of oversquashing in graph neural networks under controlled conditions. The task is constructed such that correct prediction requires aggregating information from an exponentially growing number of leaf nodes toward a single target node, making it inherently sensitive to information bottlenecks as graph depth increases. In this benchmark, \textbf{depth} refers to the depth of the underlying tree used to generate the dataset, which directly controls the radius over which information must be propagated.
+
+The task is formulated as a node-level classification problem, where the objective is to predict the label of a designated target node based on matching information propagated from distant leaf nodes. Performance is measured using classification accuracy. Throughout our experiments, \textbf{layers} denote the number of message-passing layers in the GNN model, allowing us to study the interaction between architectural depth and dataset-imposed long-range dependencies.
+\subsection{Models and Baselines}
+\begin{enumerate}[label=\Alph*.]
+  \item Base GNN:\begin{enumerate}
+    \item We use GIN as the backbone
+    \item It is used consistently across all models
+  \end{enumerate}
+  \item EGP \& CGP
+  \begin{enumerate}
+    \item For Peptides, we compare our models with both the methods.
+    \item For the TreeNeighborMatch benchmark, we use EGP as the primary expander-based baseline and compare it against its permutation-regularized variants to isolate the effect of permutation on expander-based propagation.
+
+  \end{enumerate}
+  \item Permutation based variants
+  \begin{enumerate}
+    \item Randomly reassigns expander connectivity across layers and acts as structural regularization.
+    \item Dataset-specific application: For Peptides, permutations are applied at every expander layer.
+For TreeNeighborMatch, permutation is applied only at the final expander layer to isolate its effect at the global mixing stage.
+
+  \end{enumerate}
+
+\end{enumerate}
+\subsection{Training and Hyperparameters}
+\subsubsection{Peptides}
+For the Peptides datasets, we adopt the hyperparameters and training protocol of CGP without modification whenever specified. For settings not explicitly reported in CGP (e.g., batch dimension), we follow the default configuration used in the LRGB benchmark.
+Additionally, early stopping\cite{earlystopping} is applied with a patience of 50 epochs to prevent overfitting.
+\subsubsection{TreeNeighborMatch}
+For TreeNeighborMatch, we use a computationally feasible training configuration chosen to satisfy time and resource constraints, as the original settings are prohibitively expensive for this benchmark.
+All hyperparameters are fixed across models and reported in Appendix.
+
+\subsection{Evaluation Protocol}
+\begin{enumerate}
+  \item Official splits and dataloaders were used for both Peptides and TreeNeighborMatch
+
+  \item For a fixed dataset, all the experimental conditions (seeds, GPUs, hyperparameters etc) were identical for all models.
+  \item All results are averaged over 5 random seeds (0--4).
+
+\end{enumerate}
+
+We build on publicly available implementations released by the authors of CGP, the LRGB benchmark, and TreeNeighborMatch.
+
+% Acknowledgements should only appear in the accepted version.
+\section{Results and Discussion}
+
+\subsection{Peptides Results}
+\subsubsection{Peptides-func}
+ Table \ref{tab:peptides-func} reports test Average Precision (AP) on the Peptides-func benchmark. Among expander-based methods, all permutation-regularized variants substantially outperform both EGP and CGP under identical training protocols. In particular, F-EGP achieves the best performance with \textbf{0.6145 ± 0.0041}, corresponding to an absolute improvement of \textbf{+0.112} over EGP and \textbf{+0.113} over CGP. This translates to a relative gain of approximately \textbf{22\%} over both baselines.
+\begin{table}[H]
+\centering
+\caption{Peptides-func results (AP $\uparrow$).}
+\label{tab:peptides-func}
+\begin{tabular}{lc}
+\toprule
+\textbf{Model} & \textbf{AP $\uparrow$} \\
+\midrule
+GIN        & $0.5572 \pm 0.0044$ \\
++EGP       & $0.5023 \pm 0.0084$ \\
++CGP       & $0.5016 \pm 0.0058$ \\
+\midrule
++P-EGP     & $0.6064 \pm 0.0036$ \\
++EP-EGP    & $\mathit{0.6118 \pm 0.0038}$ \\
++F-EGP     & $\mathbf{0.6145 \pm 0.0041}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+\subsubsection{Peptides-struct}
+Table \ref{tab:peptides-struct} reports test Mean Absolute Error (MAE) on the Peptides-struct benchmark, where lower values indicate better performance. All permutation-regularized variants significantly improve over both EGP and CGP. In particular, EP-EGP achieves the lowest error with \textbf{0.2670 ± 0.0015 MAE}, compared to \textbf{0.3062 ± 0.0068} for EGP and \textbf{0.3067 ± 0.0031} for CGP. This corresponds to an absolute error reduction of approximately \textbf{0.039 MAE}, or a relative improvement of about \textbf{13\%} over both baselines.
+\begin{table}[H]
+\centering
+\caption{Peptides-struct results (MAE $\downarrow$).}
+\label{tab:peptides-struct}
+\begin{tabular}{lc}
+\toprule
+\textbf{Model} & \textbf{MAE $\downarrow$} \\
+\midrule
+GIN        & $0.3610 \pm 0.0061$ \\
++EGP       & $0.3062 \pm 0.0068$ \\
++CGP       & $0.3067 \pm 0.0031$ \\
+\midrule
++P-EGP     & $0.2681 \pm 0.0017$ \\
++EP-EGP    & $\mathbf{0.2670 \pm 0.0015}$ \\
++F-EGP     & $\mathit{0.2680 \pm 0.0018}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{peptides_func_generalization_seed0.png}
+\caption{Peptides-func, seed=0}
+\label{fig:func}
+\end{figure}
+
+Taken together, the results on Peptides-func and Peptides-struct demonstrate that the proposed permutation-regularized expander propagation consistently improves performance under identical training settings, including the same backbone architecture, hyperparameters, and data splits. Since both tasks are defined over the same underlying graphs but differ in supervision — classification versus regression — the observed gains indicate that the proposed approach yields more accurate and stable representations rather than task-specific improvements. This consistency across learning regimes suggests that permutation regularization provides a generally effective inductive bias for long-range graph learning, rather than benefits tied to a specific task formulation.
+
+\subsection{TreeNeighborMatch}
+TreeNeighborMatch is a controlled synthetic benchmark designed to directly stress oversquashing, as successful prediction requires aggregating information from an exponentially growing receptive field. Increasing network depth exacerbates this bottleneck, making performance highly sensitive to long-range propagation quality. Although TreeNeighborMatch is defined in terms of training accuracy, we report test accuracy to evaluate generalization beyond the training trees. We report results at fixed depth $4$ while varying the number of GNN layers.
+
+In this setting, we compare EGP with its permutation-regularized variants. To isolate the effect of permutation at the global mixing stage, permutation is applied only at the final expander layer, while all earlier layers remain identical to EGP. As shown in Table~\ref{tab:tnm}, permutation-regularized variants consistently outperform EGP under severe oversquashing conditions, with EP-EGP achieving the strongest gains.
+
+\begin{table}[H]
+\centering
+\caption{TreeNeighborMatch results at fixed depth $4$. Higher is better.}
+\label{tab:tnm}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \multicolumn{2}{c}{\textbf{Depth $=4$}} \\
+\cmidrule(lr){2-3}
+ & \textbf{Layers $=6$} & \textbf{Layers $=7$} \\
+\midrule
+GIN      & $0.0954 \pm 0.0143$ & $0.1136 \pm 0.0295$ \\
++EGP      & $0.3575 \pm 0.0508$ & $0.3136 \pm 0.0315$ \\
+\midrule 
++EP-EGP   & $\mathbf{0.4593 \pm 0.0508}$ & $\mathbf{0.5664 \pm 0.1065}$ \\
++F-EGP    & $\mathit{0.4421 \pm 0.0490}$ & $\mathit{0.5210 \pm 0.0845}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{treeneighbor_generalization_depth4layer7_seed0.png}
+\caption{TreeNeighborMatch}
+\label{fig:tnm_depth4}
+\end{figure}
+\subsection{Linear Probe Analysis (Representation Quality)}
+\paragraph{Motivation.}
+We use linear probing as a diagnostic tool rather than as a new prediction task, with the goal of evaluating representation quality independent of expander-based propagation. Linear probes are a standard technique for this purpose, allowing performance to be attributed to the learned embeddings rather than to architectural components used during training. In our setting, the probe is used \emph{to isolate representation quality from architectural effects} introduced by auxiliary expander layers\cite{position}.
+
+\paragraph{Protocol.}
+To evaluate representation quality independently of expander-based propagation, we perform a linear probing analysis following standard practice. For each trained model, we freeze the encoder parameters and disable all expander layers, so that message passing is performed solely over the original input graph edges. Batch normalization layers are fixed in evaluation mode and dropout is disabled to ensure deterministic embeddings.
+
+We then reinitialize and train a single linear classifier on top of the frozen graph-level embeddings, using the same data splits, loss function, and evaluation metric as the original task. During this phase, only the parameters of the linear classifier are updated. Performance is reported on the validation and test sets, without any additional finetuning of the encoder.
+\paragraph{Results.}
+Table~\ref{tab:linear-probe} summarizes linear probe performance on Peptides-func. Permutation-regularized variants achieve consistent absolute gains of approximately \textbf{3--4\%} over EGP and CGP in probe accuracy. These improvements are stable across random seeds and evaluation splits, indicating that the effect is not driven by variance in training. Overall, the results indicate higher-quality representations for permutation-regularized models under a fixed linear readout.
+
+\begin{table}[H]
+\centering
+\caption{Linear probe results on Peptides-func (AP $\uparrow$).}
+\label{tab:linear-probe}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} &  \textbf{Test Probe AP} \\
+\midrule
+EGP      & $0.3725 \pm 0.0099$ \\
+CGP      & $0.3697 \pm 0.0064$ \\
+\midrule
+P-EGP    & $\mathit{0.4050 \pm 0.0087}$ \\
+EP-EGP   & $\mathbf{0.4105 \pm 0.0088}$ \\
+F-EGP    & $\mathit{0.4050 \pm 0.0055}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+\paragraph{Interpretation.}
+These findings suggest that permutation regularization acts as a form of structural regularization, reducing sensitivity to specific expander alignments and yielding representations that generalize beyond the training-time propagation structure. 
+The benefits persist even when the auxiliary expander graph is removed, indicating that permutation regularization improves the learned representations themselves rather than merely aiding propagation at inference time.
+
+\subsection{Discussion}
+Across both real-world molecular benchmarks and controlled synthetic stress tests, permutation-regularized expander propagation consistently improves performance in settings that require long-range information integration. On the Peptides benchmarks, these gains are observed under identical training protocols and persist across both classification and regression tasks, indicating improved robustness beyond task-specific effects. On TreeNeighborMatch, permutation regularization further improves performance as depth increases, suggesting enhanced stability under extreme oversquashing conditions.
+
+Taken together, these results support the view that introducing controlled stochasticity into expander-based propagation mitigates sensitivity to fixed auxiliary routing patterns. Rather than relying on a single deterministic expander structure across layers, varying expander alignments appears to act as an effective form of structural regularization, improving generalization in long-range graph learning scenarios. Importantly, these benefits are achieved without increasing model complexity or altering the underlying input graph structure.
+
+
+\section{Limitations}
+\begin{itemize}
+  \item \textbf{Lack of theoretical guarantees.}  
+  This work is empirical in nature and does not provide formal theoretical analysis or guarantees explaining when or why permutation-regularized expander propagation should be optimal. While the observed trends are consistent across multiple benchmarks, developing a principled theoretical understanding of permutation effects remains an open direction.
+
+  \item \textbf{Limited model backbones.}  
+  Experiments are conducted using a restricted set of GNN backbones and message-passing architectures. Although results are consistent across these settings, it remains to be studied how permutation regularization interacts with a broader class of architectures, including attention-heavy or non-message-passing models.
+
+  \item \textbf{Fixed expander family.}  
+  We focus on a single family of expander constructions, following prior work on EGP and CGP. Other expander families or alternative auxiliary graph constructions may exhibit different behavior under permutation, which we do not explore in this study.
+
+  \item \textbf{No hyperparameter search.}  
+  To ensure fair comparison, all methods are evaluated under identical hyperparameters inherited from prior work. While this isolates the effect of permutation, it may understate the potential performance of individual variants under task-specific tuning.
+\end{itemize}
+\section{Conclusion}
+We studied the limitations of fixed expander-based propagation for long-range graph learning and proposed permutation-regularized variants that introduce controlled stochasticity without altering model complexity or input graph structure. Across real-world molecular benchmarks from the Long Range Graph Benchmark and the TreeNeighborMatch stress test, permutation regularization consistently improves performance in regimes that require long-range information integration. Additional analysis further indicates that these gains are not solely attributable to expander-based propagation at inference time, but reflect improvements in the learned representations.
+
+Overall, our results suggest that varying expander alignments provides a simple and effective form of structural regularization for expander-augmented GNNs. An important direction for future work is to develop a theoretical understanding of how permutation interacts with auxiliary graph structure and to explore adaptive strategies for expander construction in long-range graph settings.
+
+
+
+\section*{Impact Statement}
+This work proposes a modification to expander-based graph neural network architectures that improves robustness and generalization in long-range graph learning tasks. By introducing permutation-based regularization into auxiliary expander propagation, the method enhances representation quality without increasing model complexity or altering the underlying input graph structure.
+
+The proposed approach is intended to support more reliable learning in applications that require long-range information integration, such as molecular property prediction and structured reasoning on large graphs. Since the method does not rely on task-specific preprocessing or domain-sensitive assumptions, it is broadly applicable across graph learning settings.
+
+Potential negative impacts are limited. The method does not introduce new data sources, does not alter the semantics of input graphs, and does not directly affect decision-making systems involving humans. As with any machine learning model, misuse or deployment without appropriate validation could lead to erroneous predictions, but this risk is not unique to the proposed approach. We do not anticipate broader societal harms arising from this work.
+
+
+% In the unusual situation where you want a paper to appear in the
+% references without citing it in the main text, use \nocite
+%\nocite{}
+\bibliography{example_paper}
+\bibliographystyle{icml2026}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% APPENDIX
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\newpage
+\appendix
+\onecolumn
+\section{TreeNeighborMatch, hyperparameters at depth=4}
+Models are trained for 200 epochs using the Adam optimizer with a learning rate of $10^{-3}$, weight decay $5\times10^{-4}$, and batch size 1024. A ReduceLROnPlateau scheduler is used with mode \texttt{max}, threshold mode \texttt{abs}, reduction factor 0.5, and patience of 10 epochs. Early stopping is applied with a patience of 50 epochs. The hidden dimension is set to 64, dropout is disabled (0.0), and a single training iteration is used.
+
+
+\section{Train vs Validation Accuracy at depth=5}
+In this section we notice that EGP achieves higher train accuracy even at depth=5, whereas
+our variants have a slower training curve but the validation accuracy is higher.
+The hyperparameters are same as that of depth=4, except we increased the number of 
+epochs from 200 to 400 and hidden dimension from 64 to 128.
+\begin{figure}[H]
+\centering
+\begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{treeneighbor_generalization_depth5layer7_seed0.png}
+    \caption{Validation accuracy}
+    \label{fig:tnm-val}
+\end{subfigure}
+\hfill
+\begin{subfigure}[t]{0.48\linewidth}
+    \centering
+    \includegraphics[width=\linewidth]{treeneighbor_training_depth5layer7_seed0.png}
+    \caption{Training accuracy}
+    \label{fig:tnm-train}
+\end{subfigure}
+\caption{TreeNeighborMatch performance during training and validation.}
+\label{fig:tnm-side-by-side}
+\end{figure}
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\end{document}
+
+% This document was modified from the file originally made available by
+% Pat Langley and Andrea Danyluk for ICML-2K. This version was created
+% by Iain Murray in 2018, and modified by Alexandre Bouchard in
+% 2019 and 2021 and by Csaba Szepesvari, Gang Niu and Sivan Sabato in 2022.
+% Modified again in 2023 and 2024 by Sivan Sabato and Jonathan Scarlett.
+% Previous contributors include Dan Roy, Lise Getoor and Tobias
+% Scheffer, which was slightly modified from the 2010 version by
+% Thorsten Joachims & Johannes Fuernkranz, slightly modified from the
+% 2009 version by Kiri Wagstaff and Sam Roweis's 2008 version, which is
+% slightly modified from Prasad Tadepalli's 2007 version which is a
+% lightly changed version of the previous year's version by Andrew
+% Moore, which was in turn edited from those of Kristian Kersting and
+% Codrina Lauth. Alex Smola contributed to the algorithmic style files.
