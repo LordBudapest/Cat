@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import networkx as nx
 from tqdm import tqdm
 import argparse
 import json
@@ -20,7 +19,7 @@ CUR_DIR = os.path.dirname(os.path.abspath(__file__))
 if CUR_DIR not in sys.path:
     sys.path.append(CUR_DIR)
 
-from helpers import get_cayley_n, cayley_graph_size, get_cayley_graph
+from helpers import get_cayley_n, get_cayley_graph
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 RESULTS_DIR = 'results'
@@ -46,7 +45,6 @@ MIN_LR = 1e-5
 ES_PATIENCE = 50
 ES_MIN_DELTA = 1e-4
 
-DEGREE_D =  int(os.getenv('DEGREE_D','4'))
 DATASET_NAME = 'peptides-func'
 current_dir = os.path.dirname(os.path.abspath(__file__))
 DATA_ROOT = os.path.join(current_dir, 'copy-peptides-func')
@@ -68,46 +66,12 @@ def get_loaders(root: str, name: str, batch_size: int = BATCH_SIZE):
     test_loader = DataLoader(test_list, batch_size=batch_size)
     return train_list, val_list, test_list, train_loader, val_loader, test_loader, train_ds
 
-class PeptidesExpanderTransform:
-    def __init__(self, type_name: str):
-        self.type = (type_name or 'base').upper()
-        self.cayley_memory: dict[int, torch.Tensor] = {}
-    def _get_cgp_edge_index_and_size(self, num_nodes: int) -> tuple[torch.Tensor, int]:
-        cayley_n = get_cayley_n(num_nodes)
-        cayley_num_nodes = cayley_graph_size(cayley_n)
-        if cayley_n not in self.cayley_memory:
-            self.cayley_memory[cayley_n] = get_cayley_graph(cayley_n)
-        edge_index = self.cayley_memory[cayley_n].clone()
-        return edge_index, cayley_num_nodes
-    def apply_to_data(self, data: Data):
-        num_nodes = int(data.num_nodes) if getattr(data, 'num_nodes', None) is not None else int(data.x.size(0))
-        t = self.type
-        if t in ('CGP','P-CGP','PCGP'):
-            if not hasattr(data, 'cgp_applied') or not bool(data.cgp_applied):
-                _, cayley_num_nodes = self._get_cgp_edge_index_and_size(num_nodes)
-                virtual_num_nodes = cayley_num_nodes - num_nodes
-                data.virtual_node_mask = torch.cat((torch.zeros(num_nodes, dtype=torch.bool), torch.ones(virtual_num_nodes, dtype=torch.bool)), dim=0)
-                pad = torch.zeros((virtual_num_nodes, data.x.shape[1]), dtype=data.x.dtype)
-                data.x = torch.cat((data.x, pad), dim=0)
-                data.num_nodes = cayley_num_nodes
-                data.cayley_num_nodes = cayley_num_nodes
-                data.cgp_applied = True
-        else:
-            pass
-        return data
-    def apply_to_dataset(self, dataset_list: list[Data]):
-        for data in dataset_list:
-            self.apply_to_data(data)
-
 class PeptidesGNNNode(nn.Module):
-    def __init__(self, transform_name: str | None, is_cgp: bool):
+    def __init__(self, transform_name: str | None):
         super().__init__()
         self.mode = (transform_name or 'base').lower()
-        self.is_cgp = bool(is_cgp)
         self.num_layer = NUM_LAYERS
         self.drop_ratio = DROPOUT
-        self.degree_d = DEGREE_D
-        self.pr_cache: dict[int, torch.Tensor] = {}
         self.cayley_cache: dict[int, torch.Tensor] = {}
 
         self.current_epoch = None
@@ -146,7 +110,6 @@ class PeptidesGNNNode(nn.Module):
         return cpu_hash, cuda_hash
 
     def begin_epoch(self):
-        self.pr_cache = {}
         if self.mode != 'f-egp':
             self.fixed_layer_generators = {}
 
@@ -181,10 +144,10 @@ class PeptidesGNNNode(nn.Module):
                 gen = torch.Generator(device=device)
                 gen.manual_seed(seed)
                 self.fixed_layer_generators[key] = gen
-
+                '''
                 print(
                     f"[F-EGP SET] layer={self.current_layer}, seed={seed}"
-                )
+                )'''
             else:
                 gen = self.fixed_layer_generators[key]
 
@@ -232,7 +195,7 @@ class PeptidesGNNNode(nn.Module):
                     cuda_fp = int(torch.sum(cuda_state[:16]).item())
                 else:
                     cuda_fp = -1
-
+                '''
                 print(
                     f"[P-EGP RNG] "
                     f"epoch={self.current_epoch}, "
@@ -241,7 +204,7 @@ class PeptidesGNNNode(nn.Module):
                     f"gid={gid}, "
                     f"cpu_fp={cpu_fp}, "
                     f"cuda_fp={cuda_fp}"
-                )
+                )'''
 
             # ---- generate permutation
             if gen is not None:
@@ -252,58 +215,6 @@ class PeptidesGNNNode(nn.Module):
             perm[start:start+n] = start + local_perm
 
         return perm
-
-
-    def _random_regular_local_edge_index(self, n: int, d: int):
-        if n <= 1:
-            return torch.empty((2, 0), dtype=torch.long)
-        d = min(d, n-1)
-        if (n * d) % 2 == 1:
-            if d > 1:
-                d -= 1
-            else:
-                d = 2 if n >= 3 else 1
-        if d <= 0:
-            return torch.empty((2, 0), dtype=torch.long)
-        try:
-            G = nx.random_regular_graph(d, n)
-            edges = list(G.edges())
-            if len(edges) == 0:
-                return torch.empty((2, 0), dtype=torch.long)
-            senders = []
-            receivers = []
-            for u, v in edges:
-                senders.append(u)
-                receivers.append(v)
-                senders.append(v)
-                receivers.append(u)
-            return torch.tensor([senders, receivers], dtype=torch.long)
-        except Exception:
-            if n >= 2:
-                senders = []
-                receivers = []
-                for i in range(n):
-                    j = (i+1)%n
-                    senders.append(i)
-                    receivers.append(j)
-                    senders.append(j)
-                    receivers.append(i)
-                return torch.tensor([senders, receivers], dtype=torch.long)
-            return torch.empty((2, 0), dtype=torch.long)
-    def _random_regular_batch_edge_index(self, counts: torch.Tensor, offsets: torch.Tensor, device):
-        parts = []
-        for gid in range(len(counts)):
-            n = int(counts[gid].item())
-            if n == 0:
-                continue
-            base = int(offsets[gid].item())
-            local_edges = self._random_regular_local_edge_index(n, self.degree_d)
-            if local_edges.numel() == 0:
-                continue
-            parts.append((base + local_edges).to(device))
-        if len(parts) == 0:
-            return torch.empty((2, 0), dtype=torch.long, device=device)
-        return torch.cat(parts, dim=1)
     
     def _batched_cayley_edge_index(self,batched_data: Data, counts: torch.Tensor, offsets: torch.Tensor, device):
         parts = []
@@ -312,77 +223,37 @@ class PeptidesGNNNode(nn.Module):
             if n == 0:
                 continue
             start = int(offsets[gid].item())
-            if self.is_cgp and hasattr(batched_data, 'virtual_node_mask'):
-                mask_block = batched_data.virtual_node_mask[start: start+n]
-                n_orig = int((~mask_block).sum().item())
-                cayley_n = get_cayley_n(n_orig)
-                if cayley_n in self.cayley_cache:
-                    local_edges = self.cayley_cache[cayley_n]
-                else:
-                    local_edges = get_cayley_graph(cayley_n)
-                    self.cayley_cache[cayley_n] = local_edges
-
-                if local_edges.numel() > 0:
-                    max_allowed = n
-                    mask = (local_edges[0] < max_allowed) & (local_edges[1] < max_allowed)
-                    local_edges = local_edges[:, mask]
-                parts.append((start + local_edges).to(device))
+            cayley_n = get_cayley_n(n)
+            if cayley_n in self.cayley_cache:
+                local_edges = self.cayley_cache[cayley_n]
             else:
-                cayley_n = get_cayley_n(n)
-                if cayley_n in self.cayley_cache:
-                    local_edges = self.cayley_cache[cayley_n]
-                else:
-                    local_edges = get_cayley_graph(cayley_n)
-                    self.cayley_cache[cayley_n] = local_edges
-                if local_edges.numel() > 0:
-                    mask = (local_edges[0] < n) & (local_edges[1] < n)
-                    local_edges = local_edges[:, mask]
-                parts.append((start + local_edges).to(device))
+                local_edges = get_cayley_graph(cayley_n)
+                self.cayley_cache[cayley_n] = local_edges
+            if local_edges.numel() > 0:
+                mask = (local_edges[0] < n) & (local_edges[1] < n)
+                local_edges = local_edges[:, mask]
+            parts.append((start + local_edges).to(device))
         if len(parts) == 0:
             return torch.empty((2, 0), dtype=torch.long, device=device)
         return torch.cat(parts, dim=1)
-    def _pr_base_local_graph(self, n: int):
-        key = int(n)
-        if key not in self.pr_cache:
-            self.pr_cache[key] = self._random_regular_local_edge_index(n, self.degree_d)
-        return self.pr_cache[key]
     def _compute_alt_edge_index(self, batched_data: Data):
         device = batched_data.edge_index.device
         batch = batched_data.batch
         counts, offsets = self._batch_counts_offsets(batch)
         mode = (self.mode or 'base').lower()
-        if mode in ['egp', 'cgp']:
+        if mode in ['egp']:
             return self._batched_cayley_edge_index(batched_data, counts, offsets, device)
-        if mode in ['p-egp','p-cgp', 'ep-egp','f-egp']:
+        if mode in ['p-egp', 'ep-egp','f-egp']:
             base_edges = self._batched_cayley_edge_index(batched_data, counts, offsets, device)
             perm = self._blockwise_perm(counts, offsets, device)
             return perm[base_edges]
-        if mode == 'rand':
-            return self._random_regular_batch_edge_index(counts, offsets, device)
-        if mode == 'p-rand':
-            parts = []
-            for gid in range(len(counts)):
-                n = int(counts[gid].item())
-                if n == 0:
-                    continue
-                start = int(offsets[gid].item())
-                base_local = self._pr_base_local_graph(n).to(device)
-                perm_global = start + torch.randperm(n, device=device)
-                parts.append(perm_global[base_local])
-            if len(parts) == 0:
-                return torch.empty((2, 0), dtype=torch.long, device=device)
-            return torch.cat(parts, dim=1)
+        
         return batched_data.edge_index
     def forward(self, batched_data: Data):
         x, edge_index = batched_data.x, batched_data.edge_index
-        if self.is_cgp and hasattr(batched_data, 'virtual_node_mask'):
-            x0 = torch.zeros_like(x.float())
-            x0[~batched_data.virtual_node_mask] = x.float()[~batched_data.virtual_node_mask]
-            h_list = [x0]
-        else:
-            h_list = [x.float()]
+        h_list = [x.float()]
         for layer in range(self.num_layer):
-            base_modes = ['egp','cgp', 'p-egp','ep-egp','f-egp','p-cgp','rand','p-rand']
+            base_modes = ['egp', 'p-egp','ep-egp','f-egp']
             use_alt = (self.mode in base_modes and (layer % 2 == 1))
             if use_alt:
                 self.current_layer = layer
@@ -400,19 +271,14 @@ class PeptidesGNNNode(nn.Module):
         return h_list[-1]
     
 class PeptidesGNN(nn.Module):
-    def __init__(self, transform_name: str | None = None, is_cgp: bool = False):
+    def __init__(self, transform_name: str | None = None):
         super().__init__()
-        self.is_cgp = is_cgp
-        self.gnn_node = PeptidesGNNNode(transform_name, is_cgp)
+        self.gnn_node = PeptidesGNNNode(transform_name)
         self.pool = global_mean_pool
         self.graph_pred_linear = nn.Linear(HIDDEN_DIM, OUTPUT_DIM)
     def forward(self, batched_data: Data):
         h_node = self.gnn_node(batched_data)
-        if self.is_cgp and hasattr(batched_data, 'virtual_node_mask'):
-            h_node = h_node[~batched_data.virtual_node_mask]
-            batch_indicator = batched_data.batch[~batched_data.virtual_node_mask]
-        else:
-            batch_indicator = batched_data.batch
+        batch_indicator = batched_data.batch
         h_graph = self.pool(h_node, batch_indicator)
         return self.graph_pred_linear(h_graph)
     
@@ -482,15 +348,8 @@ def run_experiment(model: nn.Module,
     validation_curve = []
     test_curve = []
     best_val = -float('inf')
-    best_test_at_best_val = None
     epochs_no_improve = 0
 
-    tname = (transform_name or 'base').upper()
-    if tname in ('CGP', 'P-CGP', 'PCGP'):
-        transform_obj = PeptidesExpanderTransform(tname)
-        transform_obj.apply_to_dataset(train_list)
-        transform_obj.apply_to_dataset(val_list)
-        transform_obj.apply_to_dataset(test_list)
     if hasattr(model, 'gnn_node'):
         # capture experiment-level CUDA seed ONCE
         model.gnn_node.exp_cuda_seed = torch.cuda.initial_seed()
@@ -554,7 +413,7 @@ def main():
     #Multiseed evaluation and mean\pm sd reporting
     SEEDS = [0]
     results = {
-        'base': [], 'egp': [], 'p-egp': [], 'rand': [], 'p-rand': [], 'cgp': [], 'p-cgp': [], 'ep-egp':[],'f-egp':[]
+        'base': [], 'egp': [], 'p-egp': [], 'ep-egp':[],'f-egp':[]
     }
     for seed in SEEDS:
         torch.manual_seed(seed)
@@ -588,7 +447,7 @@ def main():
                 'ap': float(test_ap)
             }) + '\n')
         '''
-        f_egp_model = PeptidesGNN(transform_name='F-EGP', is_cgp=False).to(DEVICE)
+        f_egp_model = PeptidesGNN(transform_name='F-EGP').to(DEVICE)
         print('Experiments for f-egp')
         test_ap = (run_experiment(f_egp_model, train_list, val_list, test_list, train_loader, val_loader, test_loader, transform_name='F-EGP'))
         results['f-egp'].append(test_ap)
@@ -606,7 +465,7 @@ def main():
           #Early stopping
           ES_PATIENCE={ES_PATIENCE}
           ES_MIN_DELTA = {ES_MIN_DELTA}
-          \n# GNN\nNUM_LAYERS = {NUM_LAYERS}\nHIDDEN_DIM={HIDDEN_DIM}\nDROPOUT = {DROPOUT}\nDEGREE_D = {DEGREE_D}''')
+          \n# GNN\nNUM_LAYERS = {NUM_LAYERS}\nHIDDEN_DIM={HIDDEN_DIM}\nDROPOUT = {DROPOUT}''')
 
     print('Final Test AP (mean ± sd over seeds):')
     for key in ['f-egp']:
