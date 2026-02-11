@@ -80,7 +80,7 @@ class PeptidesGNNNode(nn.Module):
         self.exp_cuda_seed = None
         self.fixed_layer_generators = {}
         if self.mode == 'res-egp':
-            self.alpha = nn.Parameter(torch.tensor(0.5))
+            self.alpha = nn.Parameter(torch.tensor(-1.0))
 
 
 
@@ -402,6 +402,7 @@ def run_experiment(model: nn.Module,
     print(f'Best validation score: {validation_curve[best_validation_epoch]:.4f}')
     print(f'Final test score: {test_curve[best_validation_epoch]:.4f}')
     if hasattr(model, 'gnn_node') and hasattr(model.gnn_node, 'alpha'):
+        print(f'alpha before:{alpha_history[0]}, alpha after:{alpha_history[-1]}')
         with open(os.path.join(RESULTS_DIR, 'alpha_res_egp.json'), 'w') as f:
             json.dump(alpha_history, f)
 
