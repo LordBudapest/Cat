@@ -79,7 +79,8 @@ class PeptidesGNNNode(nn.Module):
         self.current_layer = None
         self.exp_cuda_seed = None
         self.fixed_layer_generators = {}
-
+        if self.mode == 'res-egp':
+            self.alpha = nn.Parameter(torch.tensor(0.5))
 
 
 
@@ -259,6 +260,16 @@ class PeptidesGNNNode(nn.Module):
                 self.current_layer = layer
                 alt_edge_index = self._compute_alt_edge_index(batched_data)
                 h = self.convs[layer](h_list[layer], alt_edge_index)
+            elif self.mode == 'res-egp' and (layer % 2 == 1):
+                # local branch
+                h_local = self.convs[layer](h_list[layer], edge_index)
+
+                # expander branch
+                self.current_layer = layer
+                alt_edge_index = self._compute_alt_edge_index(batched_data)
+                h_exp = self.convs[layer](h_list[layer], alt_edge_index)
+
+                h = h_local + self.alpha * h_exp
             else:
                 h = self.convs[layer](h_list[layer], edge_index)
             h = self.batch_norms[layer](h)
@@ -344,6 +355,7 @@ def run_experiment(model: nn.Module,
     optimiser = torch.optim.Adam(model.parameters(), lr=LR)
     loss_fn = nn.BCEWithLogitsLoss()
     scheduler = ReduceLROnPlateau(optimiser, mode='max', factor=REDUCE_FACTOR, patience=PATIENCE, min_lr=MIN_LR, verbose=False)
+    alpha_history = []
     train_curve = []
     validation_curve = []
     test_curve = []
@@ -360,6 +372,11 @@ def run_experiment(model: nn.Module,
         if hasattr(model, 'gnn_node') and hasattr(model.gnn_node, 'begin_epoch'):
             model.gnn_node.begin_epoch()
         train(model, train_loader, optimiser=optimiser, loss_fn=loss_fn, epoch=epoch)
+
+        if hasattr(model, 'gnn_node') and hasattr(model.gnn_node, 'alpha'):
+            alpha_history.append(
+                float(model.gnn_node.alpha.detach().cpu().item())
+            )
 
         train_ap = eval_ap(model, train_loader)
         validation_ap = eval_ap(model, val_loader)
@@ -384,6 +401,10 @@ def run_experiment(model: nn.Module,
     print('Finished training')
     print(f'Best validation score: {validation_curve[best_validation_epoch]:.4f}')
     print(f'Final test score: {test_curve[best_validation_epoch]:.4f}')
+    if hasattr(model, 'gnn_node') and hasattr(model.gnn_node, 'alpha'):
+        with open(os.path.join(RESULTS_DIR, 'alpha_res_egp.json'), 'w') as f:
+            json.dump(alpha_history, f)
+
     return test_curve[best_validation_epoch]
 
 def main():
@@ -446,7 +467,7 @@ def main():
                 'seed': int(seed),
                 'ap': float(test_ap)
             }) + '\n')
-        '''
+        
         f_egp_model = PeptidesGNN(transform_name='F-EGP').to(DEVICE)
         print('Experiments for f-egp')
         test_ap = (run_experiment(f_egp_model, train_list, val_list, test_list, train_loader, val_loader, test_loader, transform_name='F-EGP'))
@@ -459,6 +480,20 @@ def main():
                 'seed': int(seed),
                 'ap': float(test_ap)
             }) + '\n')
+        '''
+
+        model = PeptidesGNN(transform_name='res-egp').to(DEVICE)
+        print('Experiments for res-egp')
+        test_ap = (run_experiment(model, train_list, val_list, test_list, train_loader, val_loader, test_loader, transform_name='res-egp'))
+        results['res-egp'].append(test_ap)
+        results_file = os.path.join(RESULTS_DIR, f'peptides_func_seed{seed}.jsonl')
+        with open(results_file, 'a') as f:
+            f.write(json.dumps({
+                'dataset': 'peptides-func',
+                'mode': 'res-egp',
+                'seed': int(seed),
+                'ap': float(test_ap)
+            }) + '\n')
 
         
     print(f'''\nHyper parameters for this test\n#Training parameters\nNUM_EPOCHS = {NUM_EPOCHS}\nLR = {LR}\nBATCH_SIZE = {BATCH_SIZE}\nSEEDS = {SEEDS}\n\n#Scheduler: ReduceLRonPlateau\nREDUCE_FACTOR:{REDUCE_FACTOR}\nPATIENCE={PATIENCE}\nMIN_LR={MIN_LR} \n
@@ -468,7 +503,7 @@ def main():
           \n# GNN\nNUM_LAYERS = {NUM_LAYERS}\nHIDDEN_DIM={HIDDEN_DIM}\nDROPOUT = {DROPOUT}''')
 
     print('Final Test AP (mean ± sd over seeds):')
-    for key in ['f-egp']:
+    for key in ['res-egp']:
         arr = np.array(results[key], dtype = float)
         print(f'{key}: {arr.mean():.4f} ± {arr.std(ddof=1):.4f}')
 
