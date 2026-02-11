@@ -434,7 +434,7 @@ def main():
     #Multiseed evaluation and mean\pm sd reporting
     SEEDS = [0]
     results = {
-        'base': [], 'egp': [], 'p-egp': [], 'ep-egp':[],'f-egp':[]
+        'base': [], 'egp': [], 'p-egp': [], 'ep-egp':[],'f-egp':[], 'res-egp': []
     }
     for seed in SEEDS:
         torch.manual_seed(seed)
