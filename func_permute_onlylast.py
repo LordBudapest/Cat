@@ -453,7 +453,7 @@ def main():
         np.random.seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
-        p_egp_model = PeptidesGNN(transform_name='P-EGP', is_cgp=False).to(DEVICE)
+        p_egp_model = PeptidesGNN(transform_name='P-EGP').to(DEVICE)
         print('Experiments for p-egp')
         test_ap = (run_experiment(p_egp_model, train_list, val_list, test_list, train_loader, val_loader, test_loader, transform_name='P-EGP'))
         results['p-egp'].append(test_ap)
@@ -466,7 +466,7 @@ def main():
                 'ap': float(test_ap)
             }) + '\n')
         
-        ep_egp_model = PeptidesGNN(transform_name='EP-EGP', is_cgp=False).to(DEVICE)
+        ep_egp_model = PeptidesGNN(transform_name='EP-EGP').to(DEVICE)
         print('Experiments for ep-egp')
         test_ap = (run_experiment(ep_egp_model, train_list, val_list, test_list, train_loader, val_loader, test_loader, transform_name='EP-EGP'))
         results['ep-egp'].append(test_ap)
